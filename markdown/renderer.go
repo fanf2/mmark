@@ -122,10 +122,18 @@ func (r *Renderer) list(w io.Writer, list *ast.List, entering bool) {
 }
 
 func (r *Renderer) listItemEnter(w io.Writer, listItem *ast.ListItem) {
-	r.outs(w, "* ")
+
+	switch x := listItem.ListFlags; {
+	case x&ast.ListTypeOrdered != 0:
+		r.outs(w, "1. ")
+	default:
+		r.outs(w, "* ")
+	}
 }
 
 func (r *Renderer) listItemExit(w io.Writer, listItem *ast.ListItem) {
+	r.cr(w)
+	r.cr(w)
 }
 
 func (r *Renderer) listItem(w io.Writer, listItem *ast.ListItem, entering bool) {
