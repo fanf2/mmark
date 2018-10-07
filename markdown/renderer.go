@@ -9,8 +9,8 @@ import (
 
 	"github.com/gomarkdown/markdown/ast"
 	"github.com/gomarkdown/markdown/html"
+	"github.com/kr/text"
 	"github.com/mmarkdown/mmark/mast"
-	"github.com/mmarkdown/mmark/pkg/text"
 )
 
 // Flags control optional behavior of Markdown renderer.
@@ -38,9 +38,7 @@ type RendererOptions struct {
 type Renderer struct {
 	opts RendererOptions
 
-	indent    int    // current indent level
-	listIdent int    // indentation for list counter
-	intraWord []byte // intraword spacing
+	paraStart int // current indent level
 }
 
 // NewRenderer creates and configures an Renderer object, which satisfies the Renderer interface.
@@ -48,7 +46,7 @@ func NewRenderer(opts RendererOptions) *Renderer {
 	if opts.TextWidth == 0 {
 		opts.TextWidth = 80
 	}
-	return &Renderer{opts: opts}
+	return &Renderer{opts: opts, paraStart: -1}
 }
 
 func (r *Renderer) hardBreak(w io.Writer, node *ast.Hardbreak) {
@@ -75,19 +73,42 @@ func (r *Renderer) citation(w io.Writer, node *ast.Citation, entering bool) {
 }
 
 func (r *Renderer) paragraph(w io.Writer, para *ast.Paragraph, entering bool) {
-	r.intraWord = none
-	if !entering {
+	if entering {
+		// breaks abstraction
+		buf, ok := w.(*bytes.Buffer)
+		if ok {
+			r.paraStart = buf.Len()
+		}
+
+		return
+	}
+
+	if r.paraStart == -1 {
+		return
+	}
+
+	buf, ok := w.(*bytes.Buffer)
+	end := 0
+	if ok {
+		end = buf.Len()
+	}
+
+	// Reformat the entire buffer and rewrite to the writer.
+	b := buf.Bytes()[r.paraStart:end]
+	wrapped := text.WrapBytes(b, r.opts.TextWidth)
+	buf.Truncate(r.paraStart)
+
+	r.out(w, wrapped)
+	if ast.GetNextNode(para) != nil {
 		r.cr(w)
 		r.cr(w)
 	}
 }
 
 func (r *Renderer) listEnter(w io.Writer, nodeData *ast.List) {
-	r.indent += 2
 }
 
 func (r *Renderer) listExit(w io.Writer, list *ast.List) {
-	r.indent -= 2
 }
 
 func (r *Renderer) list(w io.Writer, list *ast.List, entering bool) {
@@ -151,9 +172,6 @@ func (r *Renderer) imageEnter(w io.Writer, image *ast.Image) {
 func (r *Renderer) imageExit(w io.Writer, image *ast.Image) {
 }
 
-func (r *Renderer) code(w io.Writer, node *ast.Code) {
-}
-
 func (r *Renderer) mathBlock(w io.Writer, mathBlock *ast.MathBlock) {
 }
 
@@ -189,15 +207,12 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 	case *ast.Hardbreak:
 	case *ast.Callout:
 		r.outOneOf(w, entering, "<<", ">>")
-		r.intraWord = space
 
 	case *ast.Emph:
 		r.outOneOf(w, entering, "*", "*")
-		r.intraWord = space
 
 	case *ast.Strong:
 		r.outOneOf(w, entering, "**", "**")
-		r.intraWord = space
 
 	case *ast.Del:
 	case *ast.Citation:
@@ -206,7 +221,6 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 	case *ast.HorizontalRule:
 	case *ast.Paragraph:
 		r.paragraph(w, node, entering)
-
 	case *ast.HTMLSpan:
 	case *ast.HTMLBlock:
 	case *ast.List:
@@ -230,7 +244,10 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 	case *ast.Math:
 	case *ast.Image:
 	case *ast.Code:
-		r.outOneOf(w, entering, "`", "`")
+		r.outs(w, "`")
+		r.out(w, node.Literal)
+		r.outs(w, "`")
+
 	case *ast.MathBlock:
 	case *ast.Subscript:
 	case *ast.Superscript:
@@ -244,18 +261,7 @@ func (r *Renderer) Text(w io.Writer, node *ast.Text, entering bool) {
 	if !entering {
 		return
 	}
-	defer func() { r.intraWord = space }()
-
-	if r.indent == 0 {
-		r.out(w, text.WrapBytes(node.Literal, r.opts.TextWidth))
-		return
-	}
-	// wrapped text taken indent into account and then place indent number of spaces in front.
-	wrapped := text.WrapBytes(node.Literal, r.opts.TextWidth-r.indent)
-	spaces := bytes.Repeat([]byte(" "), r.indent)
-	indent := text.IndentBytes(wrapped, spaces)
-	// because the first line will already be indented with r.indent we skip it when printing.
-	r.out(w, indent[r.indent:])
+	r.out(w, node.Literal)
 }
 
 // RenderHeader writes HTML document preamble and TOC if requested.
@@ -268,8 +274,3 @@ func (r *Renderer) RenderFooter(w io.Writer, _ ast.Node) {
 
 func (r *Renderer) writeDocumentHeader(w io.Writer) {
 }
-
-var (
-	space = []byte(" ")
-	none  = []byte{}
-)

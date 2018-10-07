@@ -1,10 +1,11 @@
 package markdown
 
-import "io"
+import (
+	"io"
+)
 
-func (r *Renderer) outOneOf(w io.Writer, outFirst bool, first string, second string) {
+func (r *Renderer) outOneOf(w io.Writer, outFirst bool, first, second string) {
 	if outFirst {
-		r.out(w, r.intraWord)
 		r.outs(w, first)
 	} else {
 		r.outs(w, second)
