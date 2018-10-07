@@ -2,14 +2,15 @@
 package markdown
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/gomarkdown/markdown/ast"
 	"github.com/gomarkdown/markdown/html"
-	"github.com/kr/text"
-	"github.com/miekg/mmark/mast"
+	"github.com/mmarkdown/mmark/mast"
+	"github.com/mmarkdown/mmark/pkg/text"
 )
 
 // Flags control optional behavior of Markdown renderer.
@@ -29,14 +30,17 @@ type RendererOptions struct {
 
 	TextWidth int
 
-	// if set, called at the start of RenderNode(). Allows replacing
-	// rendering of some nodes
+	// if set, called at the start of RenderNode(). Allows replacing rendering of some nodes
 	RenderNodeHook html.RenderNodeFunc
 }
 
 // Renderer implements Renderer interface for Markdown output.
 type Renderer struct {
 	opts RendererOptions
+
+	indent    int    // current indent level
+	listIdent int    // indentation for list counter
+	intraWord []byte // intraword spacing
 }
 
 // NewRenderer creates and configures an Renderer object, which satisfies the Renderer interface.
@@ -71,6 +75,7 @@ func (r *Renderer) citation(w io.Writer, node *ast.Citation, entering bool) {
 }
 
 func (r *Renderer) paragraph(w io.Writer, para *ast.Paragraph, entering bool) {
+	r.intraWord = none
 	if !entering {
 		r.cr(w)
 		r.cr(w)
@@ -78,9 +83,11 @@ func (r *Renderer) paragraph(w io.Writer, para *ast.Paragraph, entering bool) {
 }
 
 func (r *Renderer) listEnter(w io.Writer, nodeData *ast.List) {
+	r.indent += 2
 }
 
 func (r *Renderer) listExit(w io.Writer, list *ast.List) {
+	r.indent -= 2
 }
 
 func (r *Renderer) list(w io.Writer, list *ast.List, entering bool) {
@@ -92,6 +99,7 @@ func (r *Renderer) list(w io.Writer, list *ast.List, entering bool) {
 }
 
 func (r *Renderer) listItemEnter(w io.Writer, listItem *ast.ListItem) {
+	r.outs(w, "* ")
 }
 
 func (r *Renderer) listItemExit(w io.Writer, listItem *ast.ListItem) {
@@ -180,11 +188,16 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 	case *ast.Softbreak:
 	case *ast.Hardbreak:
 	case *ast.Callout:
+		r.outOneOf(w, entering, "<<", ">>")
+		r.intraWord = space
+
 	case *ast.Emph:
 		r.outOneOf(w, entering, "*", "*")
+		r.intraWord = space
 
 	case *ast.Strong:
 		r.outOneOf(w, entering, "**", "**")
+		r.intraWord = space
 
 	case *ast.Del:
 	case *ast.Citation:
@@ -197,7 +210,9 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 	case *ast.HTMLSpan:
 	case *ast.HTMLBlock:
 	case *ast.List:
+		r.list(w, node, entering)
 	case *ast.ListItem:
+		r.listItem(w, node, entering)
 	case *ast.CodeBlock:
 	case *ast.Caption:
 	case *ast.CaptionFigure:
@@ -215,6 +230,7 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 	case *ast.Math:
 	case *ast.Image:
 	case *ast.Code:
+		r.outOneOf(w, entering, "`", "`")
 	case *ast.MathBlock:
 	case *ast.Subscript:
 	case *ast.Superscript:
@@ -225,7 +241,21 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 }
 
 func (r *Renderer) Text(w io.Writer, node *ast.Text, entering bool) {
-	r.out(w, text.WrapBytes(node.Literal, r.opts.TextWidth))
+	if !entering {
+		return
+	}
+	defer func() { r.intraWord = space }()
+
+	if r.indent == 0 {
+		r.out(w, text.WrapBytes(node.Literal, r.opts.TextWidth))
+		return
+	}
+	// wrapped text taken indent into account and then place indent number of spaces in front.
+	wrapped := text.WrapBytes(node.Literal, r.opts.TextWidth-r.indent)
+	spaces := bytes.Repeat([]byte(" "), r.indent)
+	indent := text.IndentBytes(wrapped, spaces)
+	// because the first line will already be indented with r.indent we skip it when printing.
+	r.out(w, indent[r.indent:])
 }
 
 // RenderHeader writes HTML document preamble and TOC if requested.
@@ -238,3 +268,8 @@ func (r *Renderer) RenderFooter(w io.Writer, _ ast.Node) {
 
 func (r *Renderer) writeDocumentHeader(w io.Writer) {
 }
+
+var (
+	space = []byte(" ")
+	none  = []byte{}
+)

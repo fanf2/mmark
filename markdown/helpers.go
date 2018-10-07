@@ -4,6 +4,7 @@ import "io"
 
 func (r *Renderer) outOneOf(w io.Writer, outFirst bool, first string, second string) {
 	if outFirst {
+		r.out(w, r.intraWord)
 		r.outs(w, first)
 	} else {
 		r.outs(w, second)
