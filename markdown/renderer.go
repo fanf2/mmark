@@ -46,7 +46,7 @@ type Renderer struct {
 // NewRenderer creates and configures an Renderer object, which satisfies the Renderer interface.
 func NewRenderer(opts RendererOptions) *Renderer {
 	if opts.TextWidth == 0 {
-		opts.TextWidth = 80
+		opts.TextWidth = 100
 	}
 	return &Renderer{opts: opts, paraStart: -1}
 }
@@ -54,7 +54,18 @@ func NewRenderer(opts RendererOptions) *Renderer {
 func (r *Renderer) hardBreak(w io.Writer, node *ast.Hardbreak) {
 }
 
-func (r *Renderer) matter(w io.Writer, node *ast.DocumentMatter) {
+func (r *Renderer) matter(w io.Writer, node *ast.DocumentMatter, entering bool) {
+	if !entering {
+		return
+	}
+	switch node.Matter {
+	case ast.DocumentMatterFront:
+		r.outs(w, "{frontmatter}\n")
+	case ast.DocumentMatterMain:
+		r.outs(w, "{mainmatter}\n")
+	case ast.DocumentMatterBack:
+		r.outs(w, "{backmatter}\n")
+	}
 }
 
 func (r *Renderer) heading(w io.Writer, node *ast.Heading, entering bool) {
@@ -69,6 +80,9 @@ func (r *Renderer) heading(w io.Writer, node *ast.Heading, entering bool) {
 }
 
 func (r *Renderer) horizontalRule(w io.Writer, node *ast.HorizontalRule) {
+	r.cr(w)
+	r.outs(w, "******")
+	r.cr(w)
 }
 
 func (r *Renderer) citation(w io.Writer, node *ast.Citation, entering bool) {
@@ -76,12 +90,10 @@ func (r *Renderer) citation(w io.Writer, node *ast.Citation, entering bool) {
 
 func (r *Renderer) paragraph(w io.Writer, para *ast.Paragraph, entering bool) {
 	if entering {
-		// breaks abstraction
 		buf, ok := w.(*bytes.Buffer)
 		if ok {
 			r.paraStart = buf.Len()
 		}
-
 		return
 	}
 
@@ -175,13 +187,24 @@ func (r *Renderer) tableBody(w io.Writer, node *ast.TableBody, entering bool) {
 func (r *Renderer) htmlSpan(w io.Writer, span *ast.HTMLSpan) {
 }
 
-func (r *Renderer) callout(w io.Writer, callout *ast.Callout) {
-}
-
 func (r *Renderer) crossReference(w io.Writer, cr *ast.CrossReference, entering bool) {
 }
 
-func (r *Renderer) index(w io.Writer, index *ast.Index) {
+func (r *Renderer) index(w io.Writer, index *ast.Index, entering bool) {
+	if !entering {
+		return
+	}
+
+	r.outs(w, "(!")
+	if index.Primary {
+		r.outs(w, "!")
+	}
+	r.out(w, index.Item)
+	if len(index.Subitem) > 0 {
+		r.outs(w, ", ")
+		r.out(w, index.Subitem)
+	}
+	r.outs(w, ")")
 }
 
 func (r *Renderer) link(w io.Writer, link *ast.Link, entering bool) {
@@ -246,6 +269,7 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 	case *ast.Del:
 	case *ast.Citation:
 	case *ast.DocumentMatter:
+		r.matter(w, node, entering)
 	case *ast.Heading:
 		r.heading(w, node, entering)
 	case *ast.HorizontalRule:
@@ -270,6 +294,7 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 	case *ast.Aside:
 	case *ast.CrossReference:
 	case *ast.Index:
+		r.index(w, node, entering)
 	case *ast.Link:
 	case *ast.Math:
 	case *ast.Image:

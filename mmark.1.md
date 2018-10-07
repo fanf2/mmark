@@ -48,6 +48,9 @@ The syntax is detailed at <https://mmark.nl/syntax>.
 :    allow includes from anywhere in the filesystem, otherwise they are only allowed *under* the
      current document.
 
+**-textwidth integer**
+:    set the text width when generating markdown, defaults to 100 characters.
+
 **-index**
 :    generate an index at the end of the document (default true).
 
