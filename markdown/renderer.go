@@ -24,7 +24,7 @@ const (
 )
 
 // RendererOptions is a collection of supplementary parameters tweaking
-// the behavior of various parts of XML renderer.
+// the behavior of various parts of Markdown renderer.
 type RendererOptions struct {
 	Flags Flags // Flags allow customizing this renderer's behavior
 
@@ -55,13 +55,15 @@ func (r *Renderer) hardBreak(w io.Writer, node *ast.Hardbreak) {
 func (r *Renderer) matter(w io.Writer, node *ast.DocumentMatter) {
 }
 
-func (r *Renderer) headingEnter(w io.Writer, heading *ast.Heading) {
-}
-
-func (r *Renderer) headingExit(w io.Writer, heading *ast.Heading) {
-}
-
 func (r *Renderer) heading(w io.Writer, node *ast.Heading, entering bool) {
+	if !entering {
+		r.cr(w)
+		r.cr(w)
+		return
+	}
+	hashes := strings.Repeat("#", node.Level)
+	r.outs(w, hashes)
+	r.outs(w, " ")
 }
 
 var rule = strings.Repeat("-", 60)
@@ -184,7 +186,7 @@ func (r *Renderer) table(w io.Writer, tab *ast.Table, entering bool) {
 func (r *Renderer) blockQuote(w io.Writer, block *ast.BlockQuote, entering bool) {
 }
 
-// RenderNode renders a markdown node to XML.
+// RenderNode renders a markdown node to markdown.
 func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.WalkStatus {
 	if r.opts.RenderNodeHook != nil {
 		status, didHandle := r.opts.RenderNodeHook(w, node, entering)
@@ -218,6 +220,7 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 	case *ast.Citation:
 	case *ast.DocumentMatter:
 	case *ast.Heading:
+		r.heading(w, node, entering)
 	case *ast.HorizontalRule:
 	case *ast.Paragraph:
 		r.paragraph(w, node, entering)
@@ -264,11 +267,9 @@ func (r *Renderer) Text(w io.Writer, node *ast.Text, entering bool) {
 	r.out(w, node.Literal)
 }
 
-// RenderHeader writes HTML document preamble and TOC if requested.
 func (r *Renderer) RenderHeader(w io.Writer, ast ast.Node) {
 }
 
-// RenderFooter writes HTML document footer.
 func (r *Renderer) RenderFooter(w io.Writer, _ ast.Node) {
 }
 
