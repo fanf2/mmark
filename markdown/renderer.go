@@ -38,7 +38,9 @@ type RendererOptions struct {
 type Renderer struct {
 	opts RendererOptions
 
-	paraStart int // current indent level
+	paraStart int
+	indent    int
+	listLevel int
 }
 
 // NewRenderer creates and configures an Renderer object, which satisfies the Renderer interface.
@@ -65,8 +67,6 @@ func (r *Renderer) heading(w io.Writer, node *ast.Heading, entering bool) {
 	r.outs(w, hashes)
 	r.outs(w, " ")
 }
-
-var rule = strings.Repeat("-", 60)
 
 func (r *Renderer) horizontalRule(w io.Writer, node *ast.HorizontalRule) {
 }
@@ -97,10 +97,20 @@ func (r *Renderer) paragraph(w io.Writer, para *ast.Paragraph, entering bool) {
 
 	// Reformat the entire buffer and rewrite to the writer.
 	b := buf.Bytes()[r.paraStart:end]
-	wrapped := text.WrapBytes(b, r.opts.TextWidth)
+	wrapped := text.WrapBytes(b, r.opts.TextWidth-r.indent)
+	prefix := bytes.Repeat([]byte(" "), r.indent)
+	indented := text.IndentBytes(wrapped, prefix)
+
 	buf.Truncate(r.paraStart)
 
-	r.out(w, wrapped)
+	// If in list, start at the 3rd item to print.
+	_, inList := para.Parent.(*ast.ListItem)
+	if inList {
+		r.out(w, indented[r.indent:])
+	} else {
+		r.out(w, indented)
+	}
+
 	if ast.GetNextNode(para) != nil {
 		r.cr(w)
 		r.cr(w)
@@ -108,9 +118,11 @@ func (r *Renderer) paragraph(w io.Writer, para *ast.Paragraph, entering bool) {
 }
 
 func (r *Renderer) listEnter(w io.Writer, nodeData *ast.List) {
+	r.indent += 3
 }
 
 func (r *Renderer) listExit(w io.Writer, list *ast.List) {
+	r.indent -= 3
 }
 
 func (r *Renderer) list(w io.Writer, list *ast.List, entering bool) {
@@ -122,12 +134,19 @@ func (r *Renderer) list(w io.Writer, list *ast.List, entering bool) {
 }
 
 func (r *Renderer) listItemEnter(w io.Writer, listItem *ast.ListItem) {
+	indent := r.indent - 3
+	if indent < 0 {
+		indent = 0
+	}
+	prefix := bytes.Repeat([]byte(" "), indent)
 
 	switch x := listItem.ListFlags; {
 	case x&ast.ListTypeOrdered != 0:
+		r.out(w, prefix)
 		r.outs(w, "1. ")
 	default:
-		r.outs(w, "* ")
+		r.out(w, prefix)
+		r.outs(w, "*  ")
 	}
 }
 
@@ -211,7 +230,7 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 	case *mast.BibliographyItem:
 	case *mast.DocumentIndex, *mast.IndexLetter, *mast.IndexItem, *mast.IndexSubItem, *mast.IndexLink:
 	case *ast.Text:
-		r.Text(w, node, entering)
+		r.text(w, node, entering)
 
 	case *ast.Softbreak:
 	case *ast.Hardbreak:
@@ -268,7 +287,7 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 	return ast.GoToNext
 }
 
-func (r *Renderer) Text(w io.Writer, node *ast.Text, entering bool) {
+func (r *Renderer) text(w io.Writer, node *ast.Text, entering bool) {
 	if !entering {
 		return
 	}
