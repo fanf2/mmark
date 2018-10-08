@@ -9,7 +9,6 @@ import (
 
 	"github.com/gomarkdown/markdown/ast"
 	"github.com/gomarkdown/markdown/html"
-	"github.com/kr/text"
 	"github.com/mmarkdown/mmark/mast"
 )
 
@@ -109,9 +108,7 @@ func (r *Renderer) paragraph(w io.Writer, para *ast.Paragraph, entering bool) {
 
 	// Reformat the entire buffer and rewrite to the writer.
 	b := buf.Bytes()[r.paraStart:end]
-	wrapped := text.WrapBytes(b, r.opts.TextWidth-r.indent)
-	prefix := bytes.Repeat([]byte(" "), r.indent)
-	indented := text.IndentBytes(wrapped, prefix)
+	indented := r.wrapText(b)
 
 	buf.Truncate(r.paraStart)
 
@@ -156,6 +153,11 @@ func (r *Renderer) listItemEnter(w io.Writer, listItem *ast.ListItem) {
 	case x&ast.ListTypeOrdered != 0:
 		r.out(w, prefix)
 		r.outs(w, "1. ")
+	case x&ast.ListTypeTerm != 0:
+		r.out(w, prefix)
+	case x&ast.ListTypeDefinition != 0:
+		r.out(w, prefix)
+		r.outs(w, ":  ")
 	default:
 		r.out(w, prefix)
 		r.outs(w, "*  ")
@@ -164,6 +166,9 @@ func (r *Renderer) listItemEnter(w io.Writer, listItem *ast.ListItem) {
 
 func (r *Renderer) listItemExit(w io.Writer, listItem *ast.ListItem) {
 	r.cr(w)
+	if listItem.ListFlags&ast.ListTypeTerm != 0 {
+		return
+	}
 	r.cr(w)
 }
 
@@ -175,7 +180,24 @@ func (r *Renderer) listItem(w io.Writer, listItem *ast.ListItem, entering bool) 
 	}
 }
 
-func (r *Renderer) codeBlock(w io.Writer, codeBlock *ast.CodeBlock) {
+func (r *Renderer) codeBlock(w io.Writer, codeBlock *ast.CodeBlock, entering bool) {
+	if !entering {
+		return
+	}
+
+	r.cr(w)
+	r.outs(w, "~~~")
+	if codeBlock.Info != nil {
+		r.outs(w, " ")
+		r.out(w, codeBlock.Info)
+	}
+
+	r.cr(w)
+	indented := r.indentText(codeBlock.Literal)
+	r.out(w, indented)
+	r.outs(w, "~~~")
+	r.cr(w)
+	r.cr(w)
 }
 
 func (r *Renderer) tableCell(w io.Writer, tableCell *ast.TableCell, entering bool) {
@@ -282,6 +304,7 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 	case *ast.ListItem:
 		r.listItem(w, node, entering)
 	case *ast.CodeBlock:
+		r.codeBlock(w, node, entering)
 	case *ast.Caption:
 	case *ast.CaptionFigure:
 	case *ast.Table:
