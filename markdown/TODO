@@ -1,0 +1,5 @@
+* disable file includes, i.e. leave the {{include}}
+* escaping chars
+* tables - calculate width of each column to output them.
+* all inline elements: links, citations
+* tests
